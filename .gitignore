@@ -1,0 +1,63 @@
+# Build outputs
+/MDK-ARM/Output/
+/MDK-ARM/Objects/
+/MDK-ARM/Listings/
+/EWARM/Debug/
+/EWARM/Release/
+/EWARM/Obj/
+/EWARM/List/
+/EWARM/Exe/
+/EIDE/build/
+/EIDE/bin/
+/EIDE/obj/
+/EIDE/out/
+
+# Keil MDK generated files and user state
+/MDK-ARM/DebugConfig/
+/MDK-ARM/*.uvguix.*
+/MDK-ARM/*.uvgui.*
+/MDK-ARM/*.uvoptx
+*.lnp
+*.lst
+*.map
+*.htm
+*.build_log.htm
+*.dep
+
+# IAR generated files and user state
+/EWARM/settings/
+*.ewd
+*.dep
+*.pbd
+*.pbi
+*.pbi.cout
+*.browse
+*.dbgdt
+
+# EIDE generated files and user state
+/EIDE/.settings/
+/EIDE/.eide/log/
+/EIDE/.eide.usr.ctx.json
+*.ept
+*.eide-template
+
+# Object files and firmware images
+*.o
+*.d
+*.crf
+*.elf
+*.axf
+*.hex
+*.bin
+*.srec
+*.list
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*.log
