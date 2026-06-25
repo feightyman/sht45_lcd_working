@@ -74,6 +74,15 @@
             "path":"../Src/main.c"
           },
           {
+            "path":"../Src/ht1621.c"
+          },
+          {
+            "path":"../Src/lcd_qyt12429.c"
+          },
+          {
+            "path":"../Src/sht45.c"
+          },
+          {
             "path":"../Src/py32f0xx_hal_msp.c"
           },
           {

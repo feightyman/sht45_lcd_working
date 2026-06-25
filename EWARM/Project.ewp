@@ -1125,6 +1125,15 @@
                 <name>$PROJ_DIR$\..\Src\main.c</name>
             </file>
             <file>
+                <name>$PROJ_DIR$\..\Src\ht1621.c</name>
+            </file>
+            <file>
+                <name>$PROJ_DIR$\..\Src\lcd_qyt12429.c</name>
+            </file>
+            <file>
+                <name>$PROJ_DIR$\..\Src\sht45.c</name>
+            </file>
+            <file>
                 <name>$PROJ_DIR$\..\Src\py32f0xx_hal_msp.c</name>
             </file>
             <file>

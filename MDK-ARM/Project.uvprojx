@@ -405,6 +405,21 @@
               <FilePath>..\Src\main.c</FilePath>
             </File>
             <File>
+              <FileName>ht1621.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Src\ht1621.c</FilePath>
+            </File>
+            <File>
+              <FileName>lcd_qyt12429.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Src\lcd_qyt12429.c</FilePath>
+            </File>
+            <File>
+              <FileName>sht45.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Src\sht45.c</FilePath>
+            </File>
+            <File>
               <FileName>py32f0xx_hal_msp.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Src\py32f0xx_hal_msp.c</FilePath>

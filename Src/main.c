@@ -3,7 +3,6 @@
   * @file    main.c
   * @author  MCU Application Team
   * @brief   Main program body
-  * @date
   ******************************************************************************
   * @attention
   *
@@ -16,45 +15,52 @@
   *                        opensource.org/licenses/BSD-3-Clause
   *
   ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; Copyright (c) 2016 STMicroelectronics.
-  * All rights reserved.</center></h2>
-  *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
-  *
-  ******************************************************************************
   */
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "ht1621.h"
+#include "lcd_qyt12429.h"
+#include "sht45.h"
 
 /* Private define ------------------------------------------------------------*/
-#define COUNTOF(__BUFFER__)   (sizeof(__BUFFER__) / sizeof(*(__BUFFER__)))
-#define TXSTARTMESSAGESIZE    (COUNTOF(aTxStartMessage) - 1)
-#define TXENDMESSAGESIZE      (COUNTOF(aTxEndMessage) - 1)
-#define I2C_SPEEDCLOCK        100000U
-#define I2C_DUTYCYCLE         I2C_DUTYCYCLE_16_9
-#define SHT45_ADDR            0x44U
-#define SHT45_CMD_MEASURE     0xFDU
+#define I2C_SPEEDCLOCK             100000U
+#define I2C_DUTYCYCLE              I2C_DUTYCYCLE_16_9
+
+#define APP_REFRESH_INTERVAL_MS    5000U
+#define APP_LCD_SWITCH_MS          2500U
+#define APP_KEY_DEBOUNCE_MS        30U
+
+#define APP_KEY_GPIO_PORT          GPIOA
+#define APP_KEY_GPIO_PIN           GPIO_PIN_6
+
+/* Private typedef -----------------------------------------------------------*/
+typedef enum
+{
+  APP_LCD_SHOW_TEMPERATURE = 0,
+  APP_LCD_SHOW_HUMIDITY
+} APP_LcdMode_t;
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef UartHandle;
 I2C_HandleTypeDef I2cHandle;
-uint8_t aTxStartMessage[] = "\r\n UART Hyperterminal communication based on Polling\r\n Enter 12 characters using keyboard :\r\n";
-uint8_t aTxEndMessage[] = "\r\n Example Finished\r\n";
-uint8_t aRxBuffer[12] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
+static SHT45_Data_t APP_SensorData;
+static uint8_t APP_SensorValid = 0U;
+static APP_LcdMode_t APP_LcdMode = APP_LCD_SHOW_TEMPERATURE;
+static uint8_t APP_KeyLastSample = 0U;
+static uint8_t APP_KeyStablePressed = 0U;
+static uint32_t APP_KeyLastChangeTick = 0U;
 
 /* Private function prototypes -----------------------------------------------*/
-/* Private user code ---------------------------------------------------------*/
-/* Private macro -------------------------------------------------------------*/
-/* Private function prototypes -----------------------------------------------*/
+static void APP_UART_Init(void);
 static void APP_I2C1_Init(void);
-static void APP_I2CScan(void);
-static HAL_StatusTypeDef SHT45_ReadTempHumi(int32_t *temperature_x100, int32_t *humidity_x100);
+static void APP_KeyInit(void);
+static uint8_t APP_KeyShortPressed(void);
+static uint8_t APP_KeyIsPressed(void);
+static uint8_t APP_RefreshSensor(void);
+static void APP_UpdateLcd(void);
+static void APP_PrintSensorData(const SHT45_Data_t *data);
 static void UART_Print(const char *text);
 static void UART_PrintHexByte(uint8_t value);
 static void UART_PrintUnsigned(uint32_t value);
@@ -66,13 +72,41 @@ static void UART_PrintSignedFixed2(int32_t value);
   */
 int main(void)
 {
-  /* Reset of all peripherals, Initializes the Systick */
   HAL_Init();
-  
-  /* Initialize LED */
-  BSP_LED_Init(LED_GREEN);
-  
-  /* Initialize USART */
+
+  APP_UART_Init();
+  UART_Print("\r\nSystem start\r\n");
+
+  HT1621_Init();
+  LCD_QYT12429_Init();
+
+  UART_Print("LCD all on\r\n");
+  LCD_QYT12429_AllOn();
+  HAL_Delay(2000);
+
+  UART_Print("LCD clear\r\n");
+  LCD_QYT12429_Clear();
+  HAL_Delay(1000);
+
+  UART_Print("LCD 888 test\r\n");
+  LCD_Show888Test();
+  HAL_Delay(3000);
+
+  UART_Print("LCD fixed test: 27.2C 73.1%\r\n");
+  LCD_ShowFixedTest();
+
+  while (1)
+  {
+    HAL_Delay(1000);
+  }
+}
+
+/**
+  * @brief  Initialize USART1 debug output.
+  * @retval None
+  */
+static void APP_UART_Init(void)
+{
   UartHandle.Instance          = USART1;
   UartHandle.Init.BaudRate     = 115200;
   UartHandle.Init.WordLength   = UART_WORDLENGTH_8B;
@@ -82,47 +116,15 @@ int main(void)
   UartHandle.Init.Mode         = UART_MODE_TX_RX;
   UartHandle.Init.OverSampling = UART_OVERSAMPLING_16;
   UartHandle.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+
   if (HAL_UART_Init(&UartHandle) != HAL_OK)
   {
     APP_ErrorHandler();
   }
-
-  APP_I2C1_Init();
-  APP_I2CScan();
-
-  /* Start the transmission process */
-  if(HAL_UART_Transmit(&UartHandle, (uint8_t*)aTxStartMessage, TXSTARTMESSAGESIZE, 5000)!= HAL_OK)
-  {
-    APP_ErrorHandler();
-  }
-
-  /* Turn on LED */
-  BSP_LED_On(LED_GREEN);
-
-  while (1)
-  {
-    int32_t temperature_x100 = 0;
-    int32_t humidity_x100 = 0;
-
-    if (SHT45_ReadTempHumi(&temperature_x100, &humidity_x100) == HAL_OK)
-    {
-      UART_Print("SHT45 T=");
-      UART_PrintSignedFixed2(temperature_x100);
-      UART_Print(" C, RH=");
-      UART_PrintSignedFixed2(humidity_x100);
-      UART_Print(" %\r\n");
-    }
-    else
-    {
-      UART_Print("SHT45 read failed\r\n");
-    }
-
-    HAL_Delay(1000);
-  }
 }
 
 /**
-  * @brief  Initialize I2C1 for SHT45 bus scan.
+  * @brief  Initialize I2C1 for SHT45.
   * @retval None
   */
 static void APP_I2C1_Init(void)
@@ -136,105 +138,123 @@ static void APP_I2C1_Init(void)
 
   if (HAL_I2C_Init(&I2cHandle) != HAL_OK)
   {
-    UART_Print("\r\nI2C1 init failed\r\n");
+    UART_Print("I2C1 init failed\r\n");
     APP_ErrorHandler();
   }
 }
 
 /**
-  * @brief  Scan 7-bit I2C addresses and print detected devices.
+  * @brief  Initialize PA6 key. Pressed state is low.
   * @retval None
   */
-static void APP_I2CScan(void)
+static void APP_KeyInit(void)
 {
-  uint8_t address;
-  uint8_t found = 0;
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-  UART_Print("\r\nI2C1 scan start: 0x08-0x77\r\n");
+  __HAL_RCC_GPIOA_CLK_ENABLE();
 
-  for (address = 0x08; address <= 0x77; address++)
-  {
-    if (HAL_I2C_IsDeviceReady(&I2cHandle, (uint16_t)(address << 1), 2, 10) == HAL_OK)
-    {
-      found++;
-      UART_Print("I2C device found at 0x");
-      UART_PrintHexByte(address);
-      UART_Print("\r\n");
+  GPIO_InitStruct.Pin = APP_KEY_GPIO_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(APP_KEY_GPIO_PORT, &GPIO_InitStruct);
 
-      if (address == SHT45_ADDR)
-      {
-        UART_Print("SHT45 found at 0x44\r\n");
-      }
-    }
-  }
-
-  if (found == 0)
-  {
-    UART_Print("No I2C device found\r\n");
-  }
-
-  UART_Print("I2C1 scan done\r\n");
+  APP_KeyLastSample = APP_KeyIsPressed();
+  APP_KeyStablePressed = APP_KeyLastSample;
+  APP_KeyLastChangeTick = HAL_GetTick();
 }
 
 /**
-  * @brief  Read SHT45 temperature and humidity.
-  * @param  temperature_x100 Temperature in centi-degrees Celsius.
-  * @param  humidity_x100 Relative humidity in centi-percent.
-  * @retval HAL status
+  * @brief  Detect debounced short press event.
+  * @retval 1 when a new press is detected, otherwise 0.
   */
-static HAL_StatusTypeDef SHT45_ReadTempHumi(int32_t *temperature_x100, int32_t *humidity_x100)
+static uint8_t APP_KeyShortPressed(void)
 {
-  uint8_t command = SHT45_CMD_MEASURE;
-  uint8_t data[6] = {0};
-  uint16_t temp_raw;
-  uint16_t humi_raw;
-  int32_t humidity;
+  uint8_t current_sample;
+  uint32_t now_tick;
 
-  if (HAL_I2C_Master_Transmit(&I2cHandle, (uint16_t)(SHT45_ADDR << 1), &command, 1, 100) != HAL_OK)
+  current_sample = APP_KeyIsPressed();
+  now_tick = HAL_GetTick();
+
+  if (current_sample != APP_KeyLastSample)
   {
-    return HAL_ERROR;
+    APP_KeyLastSample = current_sample;
+    APP_KeyLastChangeTick = now_tick;
   }
 
-  HAL_Delay(10);
-
-  if (HAL_I2C_Master_Receive(&I2cHandle, (uint16_t)(SHT45_ADDR << 1), data, sizeof(data), 100) != HAL_OK)
+  if (((uint32_t)(now_tick - APP_KeyLastChangeTick) >= APP_KEY_DEBOUNCE_MS) &&
+      (current_sample != APP_KeyStablePressed))
   {
-    return HAL_ERROR;
+    APP_KeyStablePressed = current_sample;
+
+    if (APP_KeyStablePressed != 0U)
+    {
+      return 1U;
+    }
   }
 
-  UART_Print("SHT45 raw: ");
-  UART_Print("0x");
-  UART_PrintHexByte(data[0]);
-  UART_Print(" 0x");
-  UART_PrintHexByte(data[1]);
-  UART_Print(" 0x");
-  UART_PrintHexByte(data[2]);
-  UART_Print(" 0x");
-  UART_PrintHexByte(data[3]);
-  UART_Print(" 0x");
-  UART_PrintHexByte(data[4]);
-  UART_Print(" 0x");
-  UART_PrintHexByte(data[5]);
+  return 0U;
+}
+
+static uint8_t APP_KeyIsPressed(void)
+{
+  return (HAL_GPIO_ReadPin(APP_KEY_GPIO_PORT, APP_KEY_GPIO_PIN) == GPIO_PIN_RESET) ? 1U : 0U;
+}
+
+/**
+  * @brief  Read SHT45, update LCD cache and print debug output.
+  * @retval 1 if refresh succeeded, otherwise 0.
+  */
+static uint8_t APP_RefreshSensor(void)
+{
+  if (SHT45_ReadTempHumi(&APP_SensorData) != HAL_OK)
+  {
+    UART_Print("SHT45 read failed or CRC error\r\n");
+    return 0U;
+  }
+
+  APP_SensorValid = 1U;
+  APP_PrintSensorData(&APP_SensorData);
+  APP_UpdateLcd();
+
+  return 1U;
+}
+
+static void APP_UpdateLcd(void)
+{
+  if (APP_SensorValid == 0U)
+  {
+    LCD_QYT12429_Clear();
+    return;
+  }
+
+  if (APP_LcdMode == APP_LCD_SHOW_TEMPERATURE)
+  {
+    LCD_QYT12429_DisplayTemperature(APP_SensorData.temperature_x100);
+  }
+  else
+  {
+    LCD_QYT12429_DisplayHumidity(APP_SensorData.humidity_x100);
+  }
+}
+
+static void APP_PrintSensorData(const SHT45_Data_t *data)
+{
+  uint8_t index;
+
+  UART_Print("SHT45 raw:");
+  for (index = 0U; index < sizeof(data->raw); index++)
+  {
+    UART_Print(" 0x");
+    UART_PrintHexByte(data->raw[index]);
+  }
   UART_Print("\r\n");
 
-  temp_raw = ((uint16_t)data[0] << 8) | data[1];
-  humi_raw = ((uint16_t)data[3] << 8) | data[4];
-
-  *temperature_x100 = -4500 + (int32_t)(((uint32_t)17500 * temp_raw) / 65535U);
-  humidity = -600 + (int32_t)(((uint32_t)12500 * humi_raw) / 65535U);
-
-  if (humidity < 0)
-  {
-    humidity = 0;
-  }
-  else if (humidity > 10000)
-  {
-    humidity = 10000;
-  }
-
-  *humidity_x100 = humidity;
-
-  return HAL_OK;
+  UART_Print("SHT45 T=");
+  UART_PrintSignedFixed2(data->temperature_x100);
+  UART_Print(" C, RH=");
+  UART_PrintSignedFixed2(data->humidity_x100);
+  UART_Print(" %\r\n");
 }
 
 /**
@@ -251,7 +271,7 @@ static void UART_Print(const char *text)
     length++;
   }
 
-  if (length > 0)
+  if (length > 0U)
   {
     if (HAL_UART_Transmit(&UartHandle, (uint8_t *)text, length, 5000) != HAL_OK)
     {
@@ -287,19 +307,19 @@ static void UART_PrintUnsigned(uint32_t value)
   char text[10];
   uint8_t index = 0;
 
-  if (value == 0)
+  if (value == 0U)
   {
     UART_Print("0");
     return;
   }
 
-  while (value > 0)
+  while (value > 0U)
   {
     text[index++] = (char)('0' + (value % 10U));
     value /= 10U;
   }
 
-  while (index > 0)
+  while (index > 0U)
   {
     char digit[2];
 
@@ -344,12 +364,10 @@ static void UART_PrintSignedFixed2(int32_t value)
 
 /**
   * @brief  This function is executed in case of error occurrence.
-  * @param  None
   * @retval None
   */
 void APP_ErrorHandler(void)
 {
-  /* infinite loop */
   while (1)
   {
   }
@@ -365,9 +383,6 @@ void APP_ErrorHandler(void)
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* User can add his own implementation to report the file name and line number,
-     for example: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* infinite loop */
   while (1)
   {
   }

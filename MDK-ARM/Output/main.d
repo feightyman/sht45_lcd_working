@@ -25,3 +25,6 @@
 .\output\main.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim_ex.h
 .\output\main.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_uart.h
 .\output\main.o: ..\..\..\..\..\..\Drivers\BSP\PY32F002xx_Start_Kit\py32f002xx_Start_Kit.h
+.\output\main.o: ..\Inc\ht1621.h
+.\output\main.o: ..\Inc\lcd_qyt12429.h
+.\output\main.o: ..\Inc\sht45.h

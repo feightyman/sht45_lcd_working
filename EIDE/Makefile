@@ -49,6 +49,12 @@ C_SOURCES =  \../Src/main.c \
 ../../../../../../drivers/PY32F0xx_HAL_Driver/src/py32f0xx_hal_cortex.c \
 ../../../../../../Drivers/PY32F0xx_HAL_Driver/Src/py32f0xx_hal_usart.c
 
+# User application sources
+C_SOURCES +=  \
+../Src/ht1621.c \
+../Src/lcd_qyt12429.c \
+../Src/sht45.c
+
 
 # ASM sources
 ASM_SOURCES =  \
