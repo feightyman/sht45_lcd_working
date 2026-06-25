@@ -27,19 +27,11 @@
 #define I2C_SPEEDCLOCK             100000U
 #define I2C_DUTYCYCLE              I2C_DUTYCYCLE_16_9
 
-#define APP_REFRESH_INTERVAL_MS    5000U
-#define APP_LCD_SWITCH_MS          2500U
+#define APP_REFRESH_INTERVAL_MS    30000U
 #define APP_KEY_DEBOUNCE_MS        30U
 
 #define APP_KEY_GPIO_PORT          GPIOA
-#define APP_KEY_GPIO_PIN           GPIO_PIN_6
-
-/* Private typedef -----------------------------------------------------------*/
-typedef enum
-{
-  APP_LCD_SHOW_TEMPERATURE = 0,
-  APP_LCD_SHOW_HUMIDITY
-} APP_LcdMode_t;
+#define APP_KEY_GPIO_PIN           GPIO_PIN_5
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef UartHandle;
@@ -47,7 +39,6 @@ I2C_HandleTypeDef I2cHandle;
 
 static SHT45_Data_t APP_SensorData;
 static uint8_t APP_SensorValid = 0U;
-static APP_LcdMode_t APP_LcdMode = APP_LCD_SHOW_TEMPERATURE;
 static uint8_t APP_KeyLastSample = 0U;
 static uint8_t APP_KeyStablePressed = 0U;
 static uint32_t APP_KeyLastChangeTick = 0U;
@@ -62,9 +53,8 @@ static uint8_t APP_RefreshSensor(void);
 static void APP_UpdateLcd(void);
 static void APP_PrintSensorData(const SHT45_Data_t *data);
 static void UART_Print(const char *text);
-static void UART_PrintHexByte(uint8_t value);
 static void UART_PrintUnsigned(uint32_t value);
-static void UART_PrintSignedFixed2(int32_t value);
+static void UART_PrintSignedFixed1(int32_t value_x100);
 
 /**
   * @brief  Main program.
@@ -72,32 +62,44 @@ static void UART_PrintSignedFixed2(int32_t value);
   */
 int main(void)
 {
+  uint32_t last_refresh_tick;
+  uint32_t now_tick;
+  uint8_t refresh_requested;
+
   HAL_Init();
 
   APP_UART_Init();
   UART_Print("\r\nSystem start\r\n");
 
+  APP_I2C1_Init();
+  SHT45_Init(&I2cHandle);
+  APP_KeyInit();
+
   HT1621_Init();
   LCD_QYT12429_Init();
-
-  UART_Print("LCD all on\r\n");
-  LCD_QYT12429_AllOn();
-  HAL_Delay(2000);
-
-  UART_Print("LCD clear\r\n");
   LCD_QYT12429_Clear();
-  HAL_Delay(1000);
 
-  UART_Print("LCD 888 test\r\n");
-  LCD_Show888Test();
-  HAL_Delay(3000);
-
-  UART_Print("LCD fixed test: 27.2C 73.1%\r\n");
-  LCD_ShowFixedTest();
+  (void)APP_RefreshSensor();
+  last_refresh_tick = HAL_GetTick();
 
   while (1)
   {
-    HAL_Delay(1000);
+    refresh_requested = APP_KeyShortPressed();
+    now_tick = HAL_GetTick();
+
+    if ((refresh_requested != 0U) ||
+        ((uint32_t)(now_tick - last_refresh_tick) >= APP_REFRESH_INTERVAL_MS))
+    {
+      if (refresh_requested != 0U)
+      {
+        UART_Print("KEY pressed, refresh now\r\n");
+      }
+
+      (void)APP_RefreshSensor();
+      last_refresh_tick = HAL_GetTick();
+    }
+
+    HAL_Delay(10);
   }
 }
 
@@ -144,7 +146,7 @@ static void APP_I2C1_Init(void)
 }
 
 /**
-  * @brief  Initialize PA6 key. Pressed state is low.
+  * @brief  Initialize PA5 key. Pressed state is low.
   * @retval None
   */
 static void APP_KeyInit(void)
@@ -224,36 +226,19 @@ static void APP_UpdateLcd(void)
 {
   if (APP_SensorValid == 0U)
   {
-    LCD_QYT12429_Clear();
     return;
   }
 
-  if (APP_LcdMode == APP_LCD_SHOW_TEMPERATURE)
-  {
-    LCD_QYT12429_DisplayTemperature(APP_SensorData.temperature_x100);
-  }
-  else
-  {
-    LCD_QYT12429_DisplayHumidity(APP_SensorData.humidity_x100);
-  }
+  LCD_QYT12429_DisplayTemperature(APP_SensorData.temperature_x100);
+  LCD_QYT12429_DisplayHumidity(APP_SensorData.humidity_x100);
 }
 
 static void APP_PrintSensorData(const SHT45_Data_t *data)
 {
-  uint8_t index;
-
-  UART_Print("SHT45 raw:");
-  for (index = 0U; index < sizeof(data->raw); index++)
-  {
-    UART_Print(" 0x");
-    UART_PrintHexByte(data->raw[index]);
-  }
-  UART_Print("\r\n");
-
-  UART_Print("SHT45 T=");
-  UART_PrintSignedFixed2(data->temperature_x100);
+  UART_Print("T=");
+  UART_PrintSignedFixed1(data->temperature_x100);
   UART_Print(" C, RH=");
-  UART_PrintSignedFixed2(data->humidity_x100);
+  UART_PrintSignedFixed1(data->humidity_x100);
   UART_Print(" %\r\n");
 }
 
@@ -278,23 +263,6 @@ static void UART_Print(const char *text)
       APP_ErrorHandler();
     }
   }
-}
-
-/**
-  * @brief  Print an 8-bit value as two uppercase hexadecimal digits.
-  * @param  value Value to print.
-  * @retval None
-  */
-static void UART_PrintHexByte(uint8_t value)
-{
-  static const char hex[] = "0123456789ABCDEF";
-  char text[3];
-
-  text[0] = hex[(value >> 4) & 0x0F];
-  text[1] = hex[value & 0x0F];
-  text[2] = '\0';
-
-  UART_Print(text);
 }
 
 /**
@@ -329,36 +297,35 @@ static void UART_PrintUnsigned(uint32_t value)
   }
 }
 
-/**
-  * @brief  Print a signed fixed-point value with two decimals.
-  * @param  value Value scaled by 100.
-  * @retval None
-  */
-static void UART_PrintSignedFixed2(int32_t value)
+static void UART_PrintSignedFixed1(int32_t value_x100)
 {
+  int32_t value_x10;
   uint32_t absolute;
   uint32_t fractional;
 
-  if (value < 0)
+  if (value_x100 >= 0)
   {
-    UART_Print("-");
-    absolute = (uint32_t)(-value);
+    value_x10 = (value_x100 + 5) / 10;
   }
   else
   {
-    absolute = (uint32_t)value;
+    value_x10 = -(((-value_x100) + 5) / 10);
   }
 
-  fractional = absolute % 100U;
-
-  UART_PrintUnsigned(absolute / 100U);
-  UART_Print(".");
-
-  if (fractional < 10U)
+  if (value_x10 < 0)
   {
-    UART_Print("0");
+    UART_Print("-");
+    absolute = (uint32_t)(-value_x10);
+  }
+  else
+  {
+    absolute = (uint32_t)value_x10;
   }
 
+  fractional = absolute % 10U;
+
+  UART_PrintUnsigned(absolute / 10U);
+  UART_Print(".");
   UART_PrintUnsigned(fractional);
 }
 
