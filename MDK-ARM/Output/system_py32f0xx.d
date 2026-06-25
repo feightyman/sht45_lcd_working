@@ -23,4 +23,5 @@
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_pwr.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim_ex.h
+.\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_lptim.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_uart.h

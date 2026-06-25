@@ -22,4 +22,5 @@
 .\output\py32f0xx_hal_gpio.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_pwr.h
 .\output\py32f0xx_hal_gpio.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim.h
 .\output\py32f0xx_hal_gpio.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim_ex.h
+.\output\py32f0xx_hal_gpio.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_lptim.h
 .\output\py32f0xx_hal_gpio.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_uart.h

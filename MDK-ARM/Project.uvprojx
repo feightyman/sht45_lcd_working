@@ -455,6 +455,11 @@
               <FilePath>..\..\..\..\..\..\drivers\PY32F0xx_HAL_Driver\src\py32f0xx_hal_rcc.c</FilePath>
             </File>
             <File>
+              <FileName>py32f0xx_hal_rcc_ex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Src\py32f0xx_hal_rcc_ex.c</FilePath>
+            </File>
+            <File>
               <FileName>py32f0xx_hal_gpio.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\..\drivers\PY32F0xx_HAL_Driver\src\py32f0xx_hal_gpio.c</FilePath>
@@ -463,6 +468,11 @@
               <FileName>py32f0xx_hal_i2c.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Src\py32f0xx_hal_i2c.c</FilePath>
+            </File>
+            <File>
+              <FileName>py32f0xx_hal_lptim.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Src\py32f0xx_hal_lptim.c</FilePath>
             </File>
             <File>
               <FileName>py32f0xx_hal_pwr.c</FileName>

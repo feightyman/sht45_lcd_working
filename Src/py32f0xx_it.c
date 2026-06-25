@@ -36,6 +36,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 extern UART_HandleTypeDef UartHandle;
+extern LPTIM_HandleTypeDef LptimHandle;
 /* Private define ------------------------------------------------------------*/
 
 /* Private macro -------------------------------------------------------------*/
@@ -99,6 +100,16 @@ void SysTick_Handler(void)
 void USART1_IRQHandler(void)
 {
   HAL_UART_IRQHandler(&UartHandle);
+}
+
+void EXTI4_15_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_5);
+}
+
+void LPTIM1_IRQHandler(void)
+{
+  HAL_LPTIM_IRQHandler(&LptimHandle);
 }
 /**
   * @brief  This function handles PPP interrupt request.

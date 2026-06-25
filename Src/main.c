@@ -27,7 +27,10 @@
 #define I2C_SPEEDCLOCK             100000U
 #define I2C_DUTYCYCLE              I2C_DUTYCYCLE_16_9
 
-#define APP_REFRESH_INTERVAL_MS    30000U
+#define APP_REFRESH_PERIOD_SECONDS 30U
+#define APP_LPTIM_PRESCALER_VALUE  128U
+#define APP_LPTIM_RELOAD_VALUE     ((LSI_VALUE / APP_LPTIM_PRESCALER_VALUE) * APP_REFRESH_PERIOD_SECONDS)
+#define APP_LPTIM_START_DELAY_US   160U
 #define APP_KEY_DEBOUNCE_MS        30U
 
 #define APP_KEY_GPIO_PORT          GPIOA
@@ -36,22 +39,26 @@
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef UartHandle;
 I2C_HandleTypeDef I2cHandle;
+LPTIM_HandleTypeDef LptimHandle;
 
 static SHT45_Data_t APP_SensorData;
 static uint8_t APP_SensorValid = 0U;
-static uint8_t APP_KeyLastSample = 0U;
-static uint8_t APP_KeyStablePressed = 0U;
-static uint32_t APP_KeyLastChangeTick = 0U;
+static uint8_t APP_KeyPressLatched = 0U;
+static volatile uint8_t key_irq_pending = 0U;
+static volatile uint8_t auto_refresh_pending = 0U;
 
 /* Private function prototypes -----------------------------------------------*/
 static void APP_UART_Init(void);
 static void APP_I2C1_Init(void);
+static void APP_LPTIM_Init(void);
+static void APP_LPTIM_Start30s(void);
 static void APP_KeyInit(void);
-static uint8_t APP_KeyShortPressed(void);
+static uint8_t APP_KeyIrqRefreshRequested(void);
 static uint8_t APP_KeyIsPressed(void);
-static uint8_t APP_RefreshSensor(void);
+static uint8_t APP_RefreshMeasurement(const char *reason);
 static void APP_UpdateLcd(void);
 static void APP_PrintSensorData(const SHT45_Data_t *data);
+static void APP_DelayUs(uint32_t delay_us);
 static void UART_Print(const char *text);
 static void UART_PrintUnsigned(uint32_t value);
 static void UART_PrintSignedFixed1(int32_t value_x100);
@@ -62,9 +69,7 @@ static void UART_PrintSignedFixed1(int32_t value_x100);
   */
 int main(void)
 {
-  uint32_t last_refresh_tick;
-  uint32_t now_tick;
-  uint8_t refresh_requested;
+  const char *refresh_reason;
 
   HAL_Init();
 
@@ -74,32 +79,38 @@ int main(void)
   APP_I2C1_Init();
   SHT45_Init(&I2cHandle);
   APP_KeyInit();
+  APP_LPTIM_Init();
 
   HT1621_Init();
   LCD_QYT12429_Init();
   LCD_QYT12429_Clear();
 
-  (void)APP_RefreshSensor();
-  last_refresh_tick = HAL_GetTick();
+  (void)APP_RefreshMeasurement("start");
+  APP_LPTIM_Start30s();
 
   while (1)
   {
-    refresh_requested = APP_KeyShortPressed();
-    now_tick = HAL_GetTick();
+    refresh_reason = NULL;
 
-    if ((refresh_requested != 0U) ||
-        ((uint32_t)(now_tick - last_refresh_tick) >= APP_REFRESH_INTERVAL_MS))
+    if (APP_KeyIrqRefreshRequested() != 0U)
     {
-      if (refresh_requested != 0U)
-      {
-        UART_Print("KEY pressed, refresh now\r\n");
-      }
-
-      (void)APP_RefreshSensor();
-      last_refresh_tick = HAL_GetTick();
+      auto_refresh_pending = 0U;
+      UART_Print("KEY pressed, refresh now\r\n");
+      refresh_reason = "key";
+    }
+    else if (auto_refresh_pending != 0U)
+    {
+      auto_refresh_pending = 0U;
+      refresh_reason = "auto";
     }
 
-    HAL_Delay(10);
+    if (refresh_reason != NULL)
+    {
+      (void)APP_RefreshMeasurement(refresh_reason);
+      APP_LPTIM_Start30s();
+    }
+
+    __WFI();
   }
 }
 
@@ -146,6 +157,59 @@ static void APP_I2C1_Init(void)
 }
 
 /**
+  * @brief  Initialize LPTIM with LSI clock for 30 s auto refresh wakeups.
+  * @retval None
+  */
+static void APP_LPTIM_Init(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef RCC_PeriphCLKInitStruct = {0};
+
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  RCC_PeriphCLKInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LPTIM;
+  RCC_PeriphCLKInitStruct.LptimClockSelection = RCC_LPTIMCLKSOURCE_LSI;
+  if (HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphCLKInitStruct) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  __HAL_RCC_LPTIM_CLK_ENABLE();
+
+  LptimHandle.Instance = LPTIM;
+  LptimHandle.Init.Prescaler = LPTIM_PRESCALER_DIV128;
+  LptimHandle.Init.UpdateMode = LPTIM_UPDATE_IMMEDIATE;
+
+  if (HAL_LPTIM_Init(&LptimHandle) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  HAL_NVIC_SetPriority(LPTIM1_IRQn, 2, 0);
+  HAL_NVIC_EnableIRQ(LPTIM1_IRQn);
+}
+
+/**
+  * @brief  Start a single 30 s LPTIM auto-refresh period.
+  * @retval None
+  */
+static void APP_LPTIM_Start30s(void)
+{
+  __HAL_LPTIM_DISABLE(&LptimHandle);
+  __HAL_LPTIM_CLEAR_FLAG(&LptimHandle, LPTIM_FLAG_ARRM);
+  __HAL_LPTIM_ENABLE_IT(&LptimHandle, LPTIM_IT_ARRM);
+  __HAL_LPTIM_ENABLE(&LptimHandle);
+  __HAL_LPTIM_AUTORELOAD_SET(&LptimHandle, APP_LPTIM_RELOAD_VALUE);
+  APP_DelayUs(APP_LPTIM_START_DELAY_US);
+  __HAL_LPTIM_START_SINGLE(&LptimHandle);
+}
+
+/**
   * @brief  Initialize PA5 key. Pressed state is low.
   * @retval None
   */
@@ -153,49 +217,54 @@ static void APP_KeyInit(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
+  __HAL_RCC_SYSCFG_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   GPIO_InitStruct.Pin = APP_KEY_GPIO_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(APP_KEY_GPIO_PORT, &GPIO_InitStruct);
 
-  APP_KeyLastSample = APP_KeyIsPressed();
-  APP_KeyStablePressed = APP_KeyLastSample;
-  APP_KeyLastChangeTick = HAL_GetTick();
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 2, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 }
 
 /**
-  * @brief  Detect debounced short press event.
-  * @retval 1 when a new press is detected, otherwise 0.
+  * @brief  Confirm pending PA5 EXTI event with 30 ms debounce.
+  * @retval 1 when a pressed key event is confirmed, otherwise 0.
   */
-static uint8_t APP_KeyShortPressed(void)
+static uint8_t APP_KeyIrqRefreshRequested(void)
 {
-  uint8_t current_sample;
-  uint32_t now_tick;
-
-  current_sample = APP_KeyIsPressed();
-  now_tick = HAL_GetTick();
-
-  if (current_sample != APP_KeyLastSample)
+  if (APP_KeyPressLatched != 0U)
   {
-    APP_KeyLastSample = current_sample;
-    APP_KeyLastChangeTick = now_tick;
-  }
+    key_irq_pending = 0U;
 
-  if (((uint32_t)(now_tick - APP_KeyLastChangeTick) >= APP_KEY_DEBOUNCE_MS) &&
-      (current_sample != APP_KeyStablePressed))
-  {
-    APP_KeyStablePressed = current_sample;
-
-    if (APP_KeyStablePressed != 0U)
+    if (APP_KeyIsPressed() == 0U)
     {
-      return 1U;
+      APP_KeyPressLatched = 0U;
     }
+
+    return 0U;
   }
 
-  return 0U;
+  if (key_irq_pending == 0U)
+  {
+    return 0U;
+  }
+
+  key_irq_pending = 0U;
+  HAL_Delay(APP_KEY_DEBOUNCE_MS);
+
+  if (APP_KeyIsPressed() == 0U)
+  {
+    return 0U;
+  }
+
+  APP_KeyPressLatched = 1U;
+  key_irq_pending = 0U;
+
+  return 1U;
 }
 
 static uint8_t APP_KeyIsPressed(void)
@@ -207,8 +276,10 @@ static uint8_t APP_KeyIsPressed(void)
   * @brief  Read SHT45, update LCD cache and print debug output.
   * @retval 1 if refresh succeeded, otherwise 0.
   */
-static uint8_t APP_RefreshSensor(void)
+static uint8_t APP_RefreshMeasurement(const char *reason)
 {
+  UNUSED(reason);
+
   if (SHT45_ReadTempHumi(&APP_SensorData) != HAL_OK)
   {
     UART_Print("SHT45 read failed or CRC error\r\n");
@@ -240,6 +311,17 @@ static void APP_PrintSensorData(const SHT45_Data_t *data)
   UART_Print(" C, RH=");
   UART_PrintSignedFixed1(data->humidity_x100);
   UART_Print(" %\r\n");
+}
+
+static void APP_DelayUs(uint32_t delay_us)
+{
+  __IO uint32_t delay = 1U + (delay_us * (SystemCoreClock / 24U)) / 1000000U;
+
+  do
+  {
+    __NOP();
+  }
+  while (delay-- != 0U);
 }
 
 /**
@@ -327,6 +409,32 @@ static void UART_PrintSignedFixed1(int32_t value_x100)
   UART_PrintUnsigned(absolute / 10U);
   UART_Print(".");
   UART_PrintUnsigned(fractional);
+}
+
+/**
+  * @brief  EXTI line detection callback.
+  * @param  GPIO_Pin GPIO pin that triggered EXTI.
+  * @retval None
+  */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == APP_KEY_GPIO_PIN)
+  {
+    key_irq_pending = 1U;
+  }
+}
+
+/**
+  * @brief  LPTIM auto-reload match callback.
+  * @param  hlptim LPTIM handle.
+  * @retval None
+  */
+void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
+{
+  if (hlptim->Instance == LPTIM)
+  {
+    auto_refresh_pending = 1U;
+  }
 }
 
 /**

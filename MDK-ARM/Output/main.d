@@ -23,6 +23,7 @@
 .\output\main.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_pwr.h
 .\output\main.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim.h
 .\output\main.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim_ex.h
+.\output\main.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_lptim.h
 .\output\main.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_uart.h
 .\output\main.o: ..\..\..\..\..\..\Drivers\BSP\PY32F002xx_Start_Kit\py32f002xx_Start_Kit.h
 .\output\main.o: ..\Inc\ht1621.h
