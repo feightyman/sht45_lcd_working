@@ -19,6 +19,7 @@
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_gpio_ex.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_cortex.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_flash.h
+.\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_i2c.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_pwr.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim.h
 .\output\system_py32f0xx.o: ..\..\..\..\..\..\Drivers\PY32F0xx_HAL_Driver\Inc\py32f0xx_hal_tim_ex.h

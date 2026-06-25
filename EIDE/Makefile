@@ -43,6 +43,7 @@ C_SOURCES =  \../Src/main.c \
 ../../../../../../Drivers/PY32F0xx_HAL_Driver/Src/py32f0xx_hal.c \
 ../../../../../../drivers/PY32F0xx_HAL_Driver/src/py32f0xx_hal_rcc.c \
 ../../../../../../drivers/PY32F0xx_HAL_Driver/src/py32f0xx_hal_gpio.c \
+../../../../../../Drivers/PY32F0xx_HAL_Driver/Src/py32f0xx_hal_i2c.c \
 ../../../../../../drivers/PY32F0xx_HAL_Driver/src/py32f0xx_hal_pwr.c \
 ../../../../../../drivers/PY32F0xx_HAL_Driver/src/py32f0xx_hal_uart.c \
 ../../../../../../drivers/PY32F0xx_HAL_Driver/src/py32f0xx_hal_cortex.c \
