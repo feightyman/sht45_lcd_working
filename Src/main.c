@@ -48,10 +48,12 @@ static volatile uint8_t key_irq_pending = 0U;
 static volatile uint8_t auto_refresh_pending = 0U;
 
 /* Private function prototypes -----------------------------------------------*/
+static void SystemClock_Config(void);
 static void APP_UART_Init(void);
 static void APP_I2C1_Init(void);
 static void APP_LPTIM_Init(void);
 static void APP_LPTIM_Start30s(void);
+static void APP_EnterStopMode(void);
 static void APP_KeyInit(void);
 static uint8_t APP_KeyIrqRefreshRequested(void);
 static uint8_t APP_KeyIsPressed(void);
@@ -110,7 +112,41 @@ int main(void)
       APP_LPTIM_Start30s();
     }
 
-    __WFI();
+    if ((key_irq_pending == 0U) && (auto_refresh_pending == 0U))
+    {
+      APP_EnterStopMode();
+    }
+  }
+}
+
+/**
+  * @brief  Restore system clock to HSISYS after Stop wakeup.
+  * @retval None
+  */
+static void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+#if defined(RCC_HSIDIV_SUPPORT)
+  RCC_OscInitStruct.HSIDiv = RCC_HSI_DIV1;
+#endif
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_8MHz;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSISYS;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  {
+    APP_ErrorHandler();
   }
 }
 
@@ -207,6 +243,46 @@ static void APP_LPTIM_Start30s(void)
   __HAL_LPTIM_AUTORELOAD_SET(&LptimHandle, APP_LPTIM_RELOAD_VALUE);
   APP_DelayUs(APP_LPTIM_START_DELAY_US);
   __HAL_LPTIM_START_SINGLE(&LptimHandle);
+}
+
+/**
+  * @brief  Enter Stop mode until PA5 EXTI or LPTIM wakes the MCU.
+  * @retval None
+  */
+static void APP_EnterStopMode(void)
+{
+  PWR_StopModeConfigTypeDef PwrStopModeConf = {0};
+
+  __disable_irq();
+
+  if ((key_irq_pending != 0U) || (auto_refresh_pending != 0U))
+  {
+    __enable_irq();
+    return;
+  }
+
+  HAL_SuspendTick();
+
+  __HAL_RCC_PWR_CLK_ENABLE();
+
+  PwrStopModeConf.LPVoltSelection = PWR_STOPMOD_LPR_VOLT_SCALE2;
+  PwrStopModeConf.FlashDelay = PWR_WAKEUP_FLASH_DELAY_5US;
+  PwrStopModeConf.WakeUpHsiEnableTime = PWR_WAKEUP_HSIEN_AFTER_MR;
+  PwrStopModeConf.RegulatorSwitchDelay = PWR_WAKEUP_LPR_TO_MR_DELAY_2US;
+  PwrStopModeConf.SramRetentionVolt = PWR_SRAM_RETENTION_VOLT_VOS;
+  if (HAL_PWR_ConfigStopMode(&PwrStopModeConf) != HAL_OK)
+  {
+    HAL_ResumeTick();
+    __enable_irq();
+    APP_ErrorHandler();
+  }
+
+  HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+
+  SystemClock_Config();
+  HAL_ResumeTick();
+
+  __enable_irq();
 }
 
 /**
