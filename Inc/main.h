@@ -47,6 +47,13 @@ void APP_ErrorHandler(void);
 
 /* Exported functions prototypes ---------------------------------------------*/
 /* Private defines -----------------------------------------------------------*/
+#ifndef APP_ENABLE_UART_LOG
+#define APP_ENABLE_UART_LOG          0U
+#endif
+
+#ifndef APP_ENABLE_I2C_SCAN
+#define APP_ENABLE_I2C_SCAN          0U
+#endif
 
 #ifdef __cplusplus
 }

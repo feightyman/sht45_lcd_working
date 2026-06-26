@@ -36,6 +36,10 @@
 #define APP_KEY_GPIO_PORT          GPIOA
 #define APP_KEY_GPIO_PIN           GPIO_PIN_5
 
+#define APP_GPIOA_ACTIVE_PINS      (GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | \
+                                    GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_7 | GPIO_PIN_13 | GPIO_PIN_14)
+#define APP_GPIOB_ACTIVE_PINS      (GPIO_PIN_2)
+
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef UartHandle;
 I2C_HandleTypeDef I2cHandle;
@@ -43,13 +47,16 @@ LPTIM_HandleTypeDef LptimHandle;
 
 static SHT45_Data_t APP_SensorData;
 static uint8_t APP_SensorValid = 0U;
-static uint8_t APP_KeyPressLatched = 0U;
 static volatile uint8_t key_irq_pending = 0U;
 static volatile uint8_t auto_refresh_pending = 0U;
 
 /* Private function prototypes -----------------------------------------------*/
 static void SystemClock_Config(void);
+static void App_UnusedGPIO_LowPowerConfig(void);
 static void APP_UART_Init(void);
+#if !APP_ENABLE_UART_LOG
+static void APP_UARTPinsLowPowerConfig(void);
+#endif
 static void APP_I2C1_Init(void);
 static void APP_LPTIM_Init(void);
 static void APP_LPTIM_Start30s(void);
@@ -61,9 +68,14 @@ static uint8_t APP_RefreshMeasurement(const char *reason);
 static void APP_UpdateLcd(void);
 static void APP_PrintSensorData(const SHT45_Data_t *data);
 static void APP_DelayUs(uint32_t delay_us);
+#if APP_ENABLE_UART_LOG
 static void UART_Print(const char *text);
 static void UART_PrintUnsigned(uint32_t value);
 static void UART_PrintSignedFixed1(int32_t value_x100);
+#define APP_LOG(...)                UART_Print(__VA_ARGS__)
+#else
+#define APP_LOG(...)                do { } while (0)
+#endif
 
 /**
   * @brief  Main program.
@@ -75,8 +87,9 @@ int main(void)
 
   HAL_Init();
 
+  App_UnusedGPIO_LowPowerConfig();
   APP_UART_Init();
-  UART_Print("\r\nSystem start\r\n");
+  APP_LOG("\r\nSystem start\r\n");
 
   APP_I2C1_Init();
   SHT45_Init(&I2cHandle);
@@ -97,7 +110,7 @@ int main(void)
     if (APP_KeyIrqRefreshRequested() != 0U)
     {
       auto_refresh_pending = 0U;
-      UART_Print("KEY pressed, refresh now\r\n");
+      APP_LOG("KEY pressed, refresh now\r\n");
       refresh_reason = "key";
     }
     else if (auto_refresh_pending != 0U)
@@ -117,6 +130,36 @@ int main(void)
       APP_EnterStopMode();
     }
   }
+}
+
+/**
+  * @brief  Put currently unused GPIO pins into analog/no-pull state.
+  * @retval None
+  */
+static void App_UnusedGPIO_LowPowerConfig(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+#if defined(GPIOF)
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+#endif
+
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+
+  GPIO_InitStruct.Pin = (uint16_t)(GPIO_PIN_All & (uint16_t)(~APP_GPIOA_ACTIVE_PINS));
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = (uint16_t)(GPIO_PIN_All & (uint16_t)(~APP_GPIOB_ACTIVE_PINS));
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+#if defined(GPIOF)
+  GPIO_InitStruct.Pin = GPIO_PIN_All;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+#endif
 }
 
 /**
@@ -156,6 +199,7 @@ static void SystemClock_Config(void)
   */
 static void APP_UART_Init(void)
 {
+#if APP_ENABLE_UART_LOG
   UartHandle.Instance          = USART1;
   UartHandle.Init.BaudRate     = 115200;
   UartHandle.Init.WordLength   = UART_WORDLENGTH_8B;
@@ -170,7 +214,35 @@ static void APP_UART_Init(void)
   {
     APP_ErrorHandler();
   }
+#else
+  APP_UARTPinsLowPowerConfig();
+#endif
 }
+
+/**
+  * @brief  Put USART1 pins in low-power state when UART logging is disabled.
+  * @retval None
+  */
+#if !APP_ENABLE_UART_LOG
+static void APP_UARTPinsLowPowerConfig(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_USART1_CLK_DISABLE();
+
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+
+  GPIO_InitStruct.Pin = GPIO_PIN_7;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+#endif
 
 /**
   * @brief  Initialize I2C1 for SHT45.
@@ -187,7 +259,7 @@ static void APP_I2C1_Init(void)
 
   if (HAL_I2C_Init(&I2cHandle) != HAL_OK)
   {
-    UART_Print("I2C1 init failed\r\n");
+    APP_LOG("I2C1 init failed\r\n");
     APP_ErrorHandler();
   }
 }
@@ -312,18 +384,6 @@ static void APP_KeyInit(void)
   */
 static uint8_t APP_KeyIrqRefreshRequested(void)
 {
-  if (APP_KeyPressLatched != 0U)
-  {
-    key_irq_pending = 0U;
-
-    if (APP_KeyIsPressed() == 0U)
-    {
-      APP_KeyPressLatched = 0U;
-    }
-
-    return 0U;
-  }
-
   if (key_irq_pending == 0U)
   {
     return 0U;
@@ -334,10 +394,10 @@ static uint8_t APP_KeyIrqRefreshRequested(void)
 
   if (APP_KeyIsPressed() == 0U)
   {
+    key_irq_pending = 0U;
     return 0U;
   }
 
-  APP_KeyPressLatched = 1U;
   key_irq_pending = 0U;
 
   return 1U;
@@ -358,7 +418,7 @@ static uint8_t APP_RefreshMeasurement(const char *reason)
 
   if (SHT45_ReadTempHumi(&APP_SensorData) != HAL_OK)
   {
-    UART_Print("SHT45 read failed or CRC error\r\n");
+    APP_LOG("SHT45 read failed or CRC error\r\n");
     return 0U;
   }
 
@@ -382,11 +442,15 @@ static void APP_UpdateLcd(void)
 
 static void APP_PrintSensorData(const SHT45_Data_t *data)
 {
-  UART_Print("T=");
+#if APP_ENABLE_UART_LOG
+  APP_LOG("T=");
   UART_PrintSignedFixed1(data->temperature_x100);
-  UART_Print(" C, RH=");
+  APP_LOG(" C, RH=");
   UART_PrintSignedFixed1(data->humidity_x100);
-  UART_Print(" %\r\n");
+  APP_LOG(" %\r\n");
+#else
+  UNUSED(data);
+#endif
 }
 
 static void APP_DelayUs(uint32_t delay_us)
@@ -405,6 +469,7 @@ static void APP_DelayUs(uint32_t delay_us)
   * @param  text String to send.
   * @retval None
   */
+#if APP_ENABLE_UART_LOG
 static void UART_Print(const char *text)
 {
   uint16_t length = 0;
@@ -486,6 +551,7 @@ static void UART_PrintSignedFixed1(int32_t value_x100)
   UART_Print(".");
   UART_PrintUnsigned(fractional);
 }
+#endif
 
 /**
   * @brief  EXTI line detection callback.

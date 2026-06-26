@@ -6,6 +6,7 @@
   */
 
 #include "ht1621.h"
+#include "main.h"
 
 #define HT1621_CS_GPIO_PORT       GPIOA
 #define HT1621_CS_GPIO_PIN        GPIO_PIN_0
@@ -247,6 +248,7 @@ static void HT1621_WriteBitsLsb(uint16_t data, uint8_t bits)
 
 static void HT1621_Print(const char *text)
 {
+#if APP_ENABLE_UART_LOG
   uint16_t length = 0U;
 
   while (text[length] != '\0')
@@ -258,6 +260,9 @@ static void HT1621_Print(const char *text)
   {
     (void)HAL_UART_Transmit(&UartHandle, (uint8_t *)text, length, 1000);
   }
+#else
+  UNUSED(text);
+#endif
 }
 
 static void HT1621_PrintHexByte(uint8_t value)

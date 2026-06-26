@@ -37,7 +37,7 @@
   */
 void HAL_MspInit(void)
 {
-  BSP_LED_Init(LED_GREEN);
+  /* PA5 is the custom key on this board; do not initialize BSP LED on PA5. */
 }
 
 /**
